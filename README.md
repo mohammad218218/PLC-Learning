@@ -83,7 +83,7 @@ Configuration Config0
         Program Inst0 WITH Task0 : main;
     End_Resource
 End_Configuration
-
+```
 
 ### Phase 3: HMI Dashboard & Bidirectional Control (Modbus TCP)
 
@@ -147,7 +147,7 @@ Configuration Config0
         Program Inst0 WITH Task0 : main;
     End_Resource
 End_Configuration
-
+```
 #### 📸 Phase 3 Snapshots
 
 **1. Node-RED Logic Flow:**
