@@ -228,7 +228,7 @@ Configuration Config0
         Program Inst0 WITH Task0 : main;
     End_Resource
 End_Configuration
-
+```
 📸 Phase 4 Snapshots
 
 **1. Node-RED Flow (Maintenance Logic):**
