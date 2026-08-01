@@ -161,3 +161,77 @@ End_Configuration
 
 **4. OpenPLC Live Monitoring:**
 ![OpenPLC Monitoring](Images/PLC_Monitoring.png)
+
+### Phase 4: Preventive Maintenance Lock & Counter Logic
+
+In industrial scenarios, equipment must be periodically serviced. In this phase, a **Maintenance Lock** system was introduced using a Count-Up (`CTU`) function block. 
+
+#### ⚙️ System Behavior
+* **Cycle Tracking:** The system monitors the `System_Run` state. After the pump successfully starts **3 times**, it automatically enters a "Maintenance Lock" mode.
+* **Safety Lockout:** Once locked, the main Latch circuit is broken. The pump immediately stops and ignores all physical and software start commands.
+* **UI Status & Reset:** The lock status is sent back to the Node-RED dashboard (`Modbus Coil 1`), changing the system status to a red "LOCKED (Needs Service)". A new Maintenance button on the HMI triggers a Modbus write to reset the counter and restore system operation.
+* **UI/UX Upgrade:** The HMI was redesigned with an industrial dark theme, high-contrast colored buttons, and bold HTML formatting for better operator visibility.
+
+#### 📊 Updated I/O & Variables Mapping
+| Variable Name | Data Type | PLC Address | Modbus Address | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| Maintenance_Lock | BOOL | `%QX0.1` | Coil 1 | Output to HMI for lock status |
+| HMI_Reset | BOOL | `%QX10.2` | Coil 82 | Software Counter Reset (Maintenance) |
+| Pump_Counter | CTU | Internal | N/A | Counts pump start cycles (PV=3) |
+
+#### 💻 Updated Structured Text (ST) Code:
+
+```pascal
+Program main
+    Var
+        Start_Btn AT %IX0.0 : BOOL;
+        Stop_Btn AT %IX0.1 : BOOL;
+        Relay_Pump AT %QX0.0 : BOOL;
+        Maintenance_Lock AT %QX0.1 : BOOL;
+        
+        HMI_Start AT %QX10.0 : BOOL;
+        HMI_Stop AT %QX10.1 : BOOL;
+        HMI_Reset AT %QX10.2 : BOOL;
+    End_Var
+    
+    Var
+        System_Run : BOOL;
+        Delay_Timer : TON;
+        Delay_Timer_2 : TOF;
+        Stop_CMD : BOOL;
+        Start_CMD : BOOL;
+        Pump_Counter : CTU;
+    End_Var
+
+    // Input combination
+    Stop_CMD := Stop_Btn AND (NOT HMI_Stop);
+    Start_CMD := (NOT Start_Btn) OR HMI_Start;
+    
+    // Counter Logic (Counts starts, Locks at 3)
+    Pump_Counter(CU := System_Run, R := HMI_Reset, PV := 3);
+    Maintenance_Lock := Pump_Counter.Q;
+    
+    // Core Latch Logic with Maintenance Safety Interlock
+    System_Run := (Start_CMD OR System_Run) AND Stop_CMD AND (NOT Maintenance_Lock);
+    
+    // Delay Timers
+    Delay_Timer(IN := System_Run, PT := T#3s);
+    Delay_Timer_2(IN := Delay_Timer.Q , PT := T#5s);
+    
+    // Output
+    Relay_Pump := Delay_Timer_2.Q;
+End_Program
+
+Configuration Config0
+    Resource Res0 ON PLC
+        Task Task0 (Interval := T#20ms, Priority := 0);
+        Program Inst0 WITH Task0 : main;
+    End_Resource
+End_Configuration
+
+📸 Phase 4 Snapshots
+
+**1. Node-RED Flow (Maintenance Logic):**
+![Maintenance Logic](Images/Nod_Red_Flow_Phase5.png)
+**2. Industrial HMI Dashboard (Dark Theme):**
+![OpenPLC Monitoring](Images/HMI_Dashboard_Phase5.png)
