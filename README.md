@@ -235,6 +235,8 @@ End_Configuration
 ![Maintenance Logic](Images/Nod_Red_Flow_Phase5.png)
 **2. Industrial HMI Dashboard (Dark Theme):**
 ![OpenPLC Monitoring](Images/HMI_Dashboard_Phase5.png)
+
+
 ### Phase 5: Telegram Bot Integration & Two-Way IoT Control
 
 In this final phase, the local automation system was upgraded to a fully functional Internet of Things (IoT) system. By integrating Node-RED with the Telegram API, the system now sends real-time alerts to the operator's mobile phone and allows for remote bidirectional control.
@@ -281,7 +283,7 @@ if (isLocked === true) {
 
 return null;
 ```
-#### 📸 Phase 5 Snapshots
+📸 Phase 5 Snapshots
 **1. Node-RED Flow (Telegram Integration):**
 ![Telegram Integration](Images/Telegram_With_keys.png)
 **2. Telegram Bot UI (Alerts & Remote Reset):**
