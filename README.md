@@ -285,6 +285,6 @@ return null;
 ```
 📸 Phase 5 Snapshots
 **1. Node-RED Flow (Telegram Integration):**
-![Telegram Integration](Images/Telegram_With_keys.png)
-**2. Telegram Bot UI (Alerts & Remote Reset):**
 ![Alerts & Remote Reset](Images/node_red_flow_Fifth.png)
+**2. Telegram Bot UI (Alerts & Remote Reset):**
+![Telegram Integration](Images/Telegram_With_keys.jpeg)
