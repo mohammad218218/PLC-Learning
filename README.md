@@ -287,4 +287,4 @@ return null;
 **1. Node-RED Flow (Telegram Integration):**
 ![Alerts & Remote Reset](Images/node_red_flow_Fifth.png)
 **2. Telegram Bot UI (Alerts & Remote Reset):**
-![Telegram Integration](Images/Telegram_With_keys.jpeg)
+![Telegram Integration](Images/Telegram_With_keys.png)
