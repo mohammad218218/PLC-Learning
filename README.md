@@ -235,3 +235,54 @@ End_Configuration
 ![Maintenance Logic](Images/Nod_Red_Flow_Phase5.png)
 **2. Industrial HMI Dashboard (Dark Theme):**
 ![OpenPLC Monitoring](Images/HMI_Dashboard_Phase5.png)
+### Phase 5: Telegram Bot Integration & Two-Way IoT Control
+
+In this final phase, the local automation system was upgraded to a fully functional Internet of Things (IoT) system. By integrating Node-RED with the Telegram API, the system now sends real-time alerts to the operator's mobile phone and allows for remote bidirectional control.
+
+#### 🎯 Achievements in this Phase:
+1. **One-Way Alarming:** Reading the Maintenance Lock status (`%QX0.1`) from OpenPLC and pushing a formatted alert message to a Telegram Bot when the system locks.
+2. **Data Filtration (RBE):** Implemented an `rbe` (Filter) node to handle Modbus JSON arrays and prevent message spamming to the Telegram API.
+3. **Two-Way Control (Inline Keyboard):** Added an interactive Inline Keyboard button to the Telegram alert message. Operators can now remotely reset the pump fault (`%QX10.2`) directly from the chat interface.
+4. **Action Logging:** Sending an acknowledgment (ACK) text message back to the Telegram chat upon successful execution of the reset command.
+
+#### 💻 Data Parsing & Telegram Payload (JavaScript)
+Since the Modbus read node outputs an array `{"data":[true,false,...]}`, the following script was used in a Function node to safely parse the data and construct the Telegram payload:
+
+```javascript
+let isLocked = false;
+
+// Safe extraction of the lock status
+if (msg.payload && msg.payload.data) {
+    isLocked = msg.payload.data[0]; 
+}
+
+// Check status and send alert with Inline Button
+if (isLocked === true) { 
+    msg.payload = {
+        chatId: "YOUR_CHAT_ID",
+        type: "message",
+        content: "🚨 <b>System Alert:</b>\nThe pump has entered Maintenance Mode after 3 starts and is currently LOCKED.\nPlease inspect the system.",
+        options: {
+            parse_mode: "HTML",
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        {
+                            text: "🔄 Reset Pump",
+                            callback_data: "reset_pump"
+                        }
+                    ]
+                ]
+            }
+        }
+    };
+    return msg;
+}
+
+return null;
+```
+
+#### 📸 Phase 5 Snapshots
+1. Node-RED Flow (Telegram Integration):
+
+2. Telegram Bot UI (Alerts & Remote Reset):
