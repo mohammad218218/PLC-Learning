@@ -254,4 +254,4 @@ END_CONFIGURATION
 **1. Node-RED Flow (Intelligent Alarm Routing):**
 ![Node-RED Telegram Intelligent Alarm](Images/Node_Red_Phase7.png)
 **2. Telegram Bot (Context-Aware Alerts & Inline Buttons):**
-![Telegram Bot Context-Aware Alerts](Images/Telegram_Smart_Alarms.jpeg)
+![Telegram Bot Context-Aware Alerts](Images/Telegram_Smart_Alarms.png)
