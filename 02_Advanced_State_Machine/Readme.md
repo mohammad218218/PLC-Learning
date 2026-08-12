@@ -121,3 +121,137 @@ END_CONFIGURATION
 
 **2. HMI Dashboard (System Status):**
 ![HMI Dashboard](Images/HMI_State_Machine.png)
+
+# 🚀 Phase 7: Smart Fault Management & Intelligent IoT Alarming
+
+Building upon the robust State Machine architecture introduced in Phase 6[cite: 1], Phase 7 focuses on implementing a strict industrial Safe State (Fault Management) and upgrading the IoT alarming system to be fully context-aware using Modbus Holding Registers.
+
+## 🏗️ Architectural Upgrades
+
+### 1. E-Stop & Fault Management (State 4)
+In the previous phase, State 4 was a placeholder[cite: 1]. It has now been fully developed into a rigid **Safe State**.
+*   **Highest Priority Interlock:** The Emergency Stop (`E_Stop`) logic is placed outside and before the `CASE` statement. If triggered, it overrides all other conditions and immediately forces the system into `State 4`.
+*   **Safe Reset Logic:** To exit State 4, the physical E-Stop must be released first. Only then will a reset command be accepted.
+
+### 2. Fail-Safe Reset Mechanism (Anti-Stuck)
+A critical industrial safety enhancement was added to prevent "Stuck Reset" conditions caused by network latency.
+*   If a reset pulse from the IoT layer (Telegram/Node-RED) remains active (`Mode_Reset = TRUE`), the PLC now actively forces it to `FALSE` after processing. This ensures the Modbus connection cannot permanently lock the maintenance counter's reset pin.
+
+## 🌐 Advanced IoT Integration (Node-RED)
+
+The alarming system was upgraded from reading a simple boolean coil to reading integer-based states, allowing the Telegram bot to understand exactly *why* the system stopped.
+
+*   **Modbus Register Reading:** Node-RED now reads the `State` tag directly from a Modbus Holding Register (FC 3) instead of a simple boolean alarm coil.
+*   **RBE Filtering & Switch Logic:** An `rbe` (Filter) node prevents alarm spamming by blocking duplicate values. A `switch` node then routes the payload based on the specific fault state (4 or 5).
+*   **Context-Aware Telegram Alerts:** 
+    *   If `State 4`: Sends a Critical E-Stop alert.
+    *   If `State 5`: Sends a Maintenance/Service alert.
+*   **Inline Keyboards (Glass Buttons):** Both alerts include specific English inline keyboard buttons allowing operators to remotely acknowledge and reset the exact fault directly from Telegram.
+
+## 💻 Final Structured Text (ST) Code
+
+Below is the updated State Machine logic used in the OpenPLC runtime for Phase 7:
+
+```iecst
+PROGRAM main
+    VAR
+        Start_Btn AT %IX0.0 : BOOL;
+        Stop_Btn AT %IX0.1 : BOOL;
+        Relay_Pump AT %QX0.0 : BOOL;
+        System_Mode AT %QX0.2 : BOOL;
+        Sim_Tank_Level AT %QW0 : INT;
+        State AT %QW1 : INT;
+        Main_Alarm AT %QX0.3 : BOOL;
+        Mode_Reset AT %QX0.4 : BOOL;
+        E_Stop AT %QX0.5 : BOOL;
+    END_VAR
+    
+    VAR
+        Delay_Timer : TON;
+        Delay_Timer_2 : TON;
+        Pump_Counter : CTU;
+    END_VAR
+
+    // Isolated Timers and Counters
+    Delay_Timer(IN := (State = 1), PT := T#3s);
+    Delay_Timer_2(IN := (State = 3), PT := T#5s);
+    Pump_Counter(CU := (State = 2), R := Mode_Reset, PV := 3);
+
+    // Network Pulse Protection (Fail-Safe Reset)
+    IF Mode_Reset = TRUE AND State < 4 THEN
+        Mode_Reset := FALSE;
+    END_IF;
+
+    // E-Stop Logic (Highest Priority Override)
+    IF E_Stop = TRUE THEN
+        State := 4;
+    END_IF;
+
+    CASE State OF
+        0: // Idle
+            Relay_Pump := FALSE;
+            Main_Alarm := FALSE;
+            
+            IF Pump_Counter.Q = TRUE THEN
+                State := 5;
+            ELSIF Start_Btn = FALSE THEN 
+                State := 1;
+            END_IF;
+            
+        1: // Start Delay
+            IF Delay_Timer.Q = TRUE THEN
+                State := 2;
+            END_IF;
+            
+        2: // Running
+            Relay_Pump := TRUE;
+            IF Stop_Btn = FALSE THEN
+                State := 3;
+            END_IF;
+            
+        3: // Stop Delay
+            IF Delay_Timer_2.Q = TRUE THEN
+                State := 0;
+            END_IF;
+            
+            IF Pump_Counter.Q = TRUE THEN
+                State := 5;
+            END_IF; 
+            
+        4: // Fault Mode (E-Stop)
+            Relay_Pump := FALSE;
+            Main_Alarm := TRUE;
+            
+            IF Mode_Reset = TRUE AND E_Stop = FALSE THEN
+                Mode_Reset := FALSE;
+                Main_Alarm := FALSE;
+                State := 0;
+            END_IF;
+            
+        5: // Maintenance Lock
+            Relay_Pump := FALSE;
+            Main_Alarm := TRUE;
+            
+            IF Mode_Reset = TRUE THEN
+                Main_Alarm := FALSE;
+                Mode_Reset := FALSE;
+                E_Stop := FALSE;
+                State := 0;
+            END_IF;    
+    END_CASE;
+
+END_PROGRAM
+
+CONFIGURATION Config0
+    RESOURCE Res0 ON PLC
+        TASK Task0 (INTERVAL := T#20ms, PRIORITY := 0);
+        PROGRAM Inst0 WITH Task0 : main;
+    END_RESOURCE
+END_CONFIGURATION
+```
+
+## 📸 Snapshots
+**1. Node-RED Flow (Intelligent Alarm Routing):**
+![Node-RED Telegram Intelligent Alarm](Images/Node_Red_Phase7.png)
+**2. Telegram Bot (Context-Aware Alerts & Inline Buttons):**
+![Telegram Bot Context-Aware Alerts](Images/Telegram_Smart_Alarms.png)
