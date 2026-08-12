@@ -1,0 +1,123 @@
+# 🏭 Phase 6: Advanced State Machine Architecture & Telegram IoT Integration
+
+Building upon the previous Latch-based logic, this phase introduces a complete architectural overhaul of the SoftPLC. The control logic has been upgraded to a **State Machine (CASE OF)** to ensure strict sequence control, eliminate race conditions (like relay chatter), and provide a robust foundation for IoT integration.
+
+## 🏗️ Architectural Upgrades
+
+### 1. State Machine Implementation (Structured Text)
+Instead of relying on complex boolean latching, the system now operates in strictly defined states. This guarantees that timers, like the 3-Second Start Delay and 5-Second Stop Delay, execute flawlessly without interference.
+
+**System States:**
+*   `State 0`: **Idle / Ready** - Pump is OFF, waiting for commands.
+*   `State 1`: **Start Delay** - Evaluating input stability (3s Debounce/Delay).
+*   `State 2`: **Running** - Pump is ON.
+*   `State 3`: **Stop Delay** - Line clearing active (5s Delay).
+*   `State 4`: **Fault** - Hardware fault state.
+*   `State 5`: **Maintenance Lock** - Reached cycle limit, pump interlocked.
+
+### 2. Resolving Industrial Control Bugs (Engineering Notes)
+During the development of this State Machine, two critical industrial bugs were identified and resolved:
+*   **Timer Placement Issue:** Moving `TON` and `TOF` blocks *outside* the `CASE` statement ensures timers process accurately across state transitions, preventing instant-triggering and relay chattering.
+*   **Fail-Safe Reset Logic:** Designed the `Mode_Reset` tag to self-clear (`Mode_Reset := FALSE;`) immediately within the PLC code after execution. This prevents the Counter's Reset pin (`R`) from being permanently pulled high by network delays.
+
+## 🌐 Node-RED & Telegram API Integration (IoT)
+
+The HMI has been extended beyond a local web dashboard to include real-time mobile alerts and remote control via the Telegram API.
+
+*   **Smart Alarming:** When the system enters `State 5` (Maintenance), a Node-RED `Modbus Read` node captures the state and triggers a JavaScript function to format a JSON payload.
+*   **Remote Interlock Reset:** The Telegram alert includes an **Inline Keyboard Button**. Clicking this button sends a `callback_query` to Node-RED.
+*   **Pulse Generation:** Node-RED receives the callback and generates a precise **300ms trigger pulse** (via `Modbus Write`), mimicking a physical momentary push-button to safely reset the PLC state.
+
+## 💻 Final Structured Text (ST) Code
+
+Below is the optimized, bug-free State Machine logic used in the OpenPLC runtime:
+
+```iecst
+PROGRAM main
+    VAR
+        Start_Btn AT %IX0.0 : BOOL;
+        Stop_Btn AT %IX0.1 : BOOL;
+        Relay_Pump AT %QX0.0 : BOOL;
+        System_Mode AT %QX0.2: BOOL;
+        Sim_Tank_Level AT %QW0 : INT;
+        State AT %QW1 : INT;
+        Main_Alarm AT %QX0.3 : BOOL;
+        Mode_Reset AT %QX0.4 : BOOL;
+    END_VAR
+    
+    VAR
+        Fault : BOOL;
+        Delay_Timer : TON;
+        Delay_Timer_2 : TON;
+        Pump_Counter : CTU;
+    END_VAR
+    
+    // Core timing and counting logic placed outside the CASE statement
+    // to prevent execution freezing during state transitions.
+    Delay_Timer(IN := (State = 1), PT := T#3s);
+    Delay_Timer_2(IN := (State = 3), PT := T#5s);
+    Pump_Counter(CU := (State = 2), R := Mode_Reset, PV := 3);
+    
+    CASE State OF
+        0:
+            Relay_Pump := FALSE;
+            IF Start_Btn = FALSE THEN
+                State := 1;
+            END_IF;
+            IF Pump_Counter.Q = TRUE THEN
+                State := 5;
+            END_IF;    
+            
+        1:
+            Relay_Pump := FALSE;
+            IF Delay_Timer.Q = TRUE THEN
+                State := 2;
+            END_IF;
+            
+        2:
+            Relay_Pump := TRUE;
+            IF Stop_Btn = FALSE THEN
+                State := 3;
+            END_IF;
+            
+        3:
+            Relay_Pump := FALSE;
+            IF Delay_Timer_2.Q = TRUE THEN
+                State := 0;
+            END_IF;
+            IF Pump_Counter.Q = TRUE THEN
+                State := 5;
+            END_IF; 
+            
+        4:
+            IF Fault = TRUE THEN
+                State := 0;
+            END_IF;
+            
+        5:
+            Relay_Pump := FALSE;
+            Main_Alarm := TRUE;
+            IF Mode_Reset = TRUE THEN
+                Main_Alarm := FALSE;
+                Mode_Reset := FALSE; // Fail-safe software reset
+                State := 0;
+            END_IF;
+    END_CASE;
+    
+END_PROGRAM
+
+CONFIGURATION Config0
+    RESOURCE Res0 ON PLC
+        TASK Task0 (INTERVAL := T#20ms, PRIORITY := 0);
+        PROGRAM Inst0 WITH Task0 : main;
+    END_RESOURCE
+END_CONFIGURATION
+´´´
+
+## 📸 Snapshots
+
+**1. Node-RED Flow (IoT & State Machine Integration):**
+![Node-RED Telegram Logic](Images/Node_Red_Telegram_StateMachine.png)
+
+**2. HMI Dashboard (System Status):**
+![HMI Dashboard](Images/HMI_State_Machine.png)
