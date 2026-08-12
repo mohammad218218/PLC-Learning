@@ -112,7 +112,7 @@ CONFIGURATION Config0
         PROGRAM Inst0 WITH Task0 : main;
     END_RESOURCE
 END_CONFIGURATION
-´´´
+```
 
 ## 📸 Snapshots
 
