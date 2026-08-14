@@ -386,14 +386,13 @@ Program main
                 
 End_Program
 
-
 Configuration Config0
     Resource Res0 ON PLC
         Task Task0 (Interval := T#20ms, Priority := 0);
         Program Inst0 WITH Task0 : main;
     End_Resource
-End_Configuration    
-
+End_Configuration
+```
 ## 📸 Snapshots
 **1. Node-RED Flow (Data Splitting & Optimized Modbus):**
 ![Node-RED Data Splitting](Images/Node_RED_FLOW_Phase8.png)
