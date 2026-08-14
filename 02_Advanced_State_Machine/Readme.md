@@ -399,4 +399,4 @@ End_Configuration
 **2. Local HMI (Tank Level Simulation):**
 ![Local HMI](Images/Node_RED_HMI.png)
 **3. Telegram IoT (Segmented Smart Alarms):**
-![Telegram Alarm](Images/Telegram_Phase8.png)
+![Telegram Alarm](Images/Telegram_Phase_8.png)
