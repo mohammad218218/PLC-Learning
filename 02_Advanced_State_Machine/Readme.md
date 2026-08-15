@@ -400,3 +400,206 @@ End_Configuration
 ![Local HMI](Images/Node_RED_HMI.png)
 **3. Telegram IoT (Segmented Smart Alarms):**
 ![Telegram Alarm](Images/Telegram_Phase_8.png)
+
+# 🚀 Phase 9: Predictive Maintenance & Industrial Data Logging (SQLite)
+
+Building upon the real-time process simulation and Modbus network optimizations introduced in Phase 8, Phase 9 transitions the system from a simple real-time controller into a historical Data Logger. This phase introduces Predictive Maintenance tracking and local database storage without compromising the performance of live monitoring.
+
+## 🏗️ Architectural Upgrades
+
+### 1. Predictive Maintenance Analytics (PLC Logic)
+To enable proactive servicing of the pump, new metrics were introduced to the PLC logic and mapped to Modbus Holding Registers:
+*   **Total Run Time:** An accumulator logic calculates the exact amount of time (in minutes) the pump spends in the Running state.
+*   **Lifetime Pump Starts:** A permanent counter tracks the absolute total number of times the pump is energized, independent of the resettable maintenance interlock.
+
+## 🌐 IoT & Node-RED Database Integration
+
+The Node-RED architecture was significantly upgraded to handle database writing. A major industrial design challenge was solved here: *How to log data efficiently without flooding the database from a fast-polling Modbus node?*
+
+### 1. Dual-Path Data Architecture
+The single Modbus Read node's output was split into two isolated streams to separate "Live Monitoring" from "Historical Logging":
+*   **Real-Time Path:** Remains untouched, feeding the HMI gauges and Telegram alarming logic instantly.
+*   **Logging Path:** Routed towards the database with strict traffic control mechanisms.
+
+### 2. Rate Limiting (Traffic Control)
+To prevent database bloat, a `Delay` node configured as a **Rate Limiter** (`limit 1 msg/m`) was introduced.
+*   Instead of writing data every second (the Modbus polling rate), the system drops intermediate messages and only permits one payload per minute to pass through to the database.
+
+### 3. SQLite Integration & Dynamic Queries
+*   **Local Storage:** The `node-red-node-sqlite` package was installed and configured to create a local database file (`/home/mohammad/Phase_9_Timers.db`) on the Raspberry Pi.
+*   **Dynamic SQL Generation:** A custom JavaScript function node (`SQL_Function`) parses the incoming Modbus array and dynamically constructs an `INSERT INTO` SQL string, mapping `Tank_Level`, `Machine_State`, `Total_Run_Time`, and `Pump_Start_Count` to their respective database columns.
+
+## 💻 Final Structured Text (ST) Code
+
+Below is the optimized State Machine logic integrating the Predictive Maintenance counters and timers for Phase 9:
+
+```iecst
+PROGRAM main
+    VAR
+        // --- Hardware & UI Inputs/Outputs ---
+        Start_Btn AT %IX0.0 : BOOL;
+        Stop_Btn AT %IX0.1 : BOOL;
+        Relay_Pump AT %QX0.0 : BOOL;
+        System_Mode AT %QX0.2: BOOL;
+        Main_Alarm AT %QX0.3 : BOOL;
+        Mode_Reset AT %QX0.4 : BOOL;
+        E_Stop AT %QX0.5 : BOOL;
+
+        // --- Modbus Holding Registers (Node-RED Integration) ---
+        Sim_Tank_Level AT %QW0 : INT := 100;
+        State AT %QW1 : INT;
+        Total_Run_Time_Min AT %QW2 : INT;    // Total Run Time in Minutes
+        Pump_Start_Count_Val AT %QW3 : INT;  // Lifetime Pump Start Count
+    END_VAR
+    
+    VAR
+        // --- Internal Timers & Counters ---
+        Delay_Timer : TON;
+        Delay_Timer_2 : TON;
+        Level_Dec_Timer : TON;
+        Timer_1s : TON;
+        
+        Pump_Counter : CTU;
+        Pump_Start_Count : CTU;
+        
+        // --- Internal Variables ---
+        Run_Time_Sec : INT := 0;
+        Run_Time_min : INT := 0;
+        Pulse_1s : BOOL;
+    END_VAR
+
+    // ==========================================
+    // SECTION 1: TIMERS & PULSE GENERATORS
+    // ==========================================
+    Delay_Timer(IN := (State = 1), PT := T#3s);
+    Delay_Timer_2(IN := (State = 3), PT := T#5s);
+    
+    // Generate 1-second pulse for calculations
+    Timer_1s(IN := NOT Timer_1s.Q, PT := T#1s);
+    Pulse_1s := Timer_1s.Q;
+
+    // ==========================================
+    // SECTION 2: ANALYTICS & PREDICTIVE MAINTENANCE 
+    // ==========================================
+    // Count maintenance interlock (3 starts)
+    Pump_Counter(CU := (State = 2), R := Mode_Reset, PV := 3);
+    
+    // Total Lifetime Pump Starts
+    Pump_Start_Count(CU := (State = 2), R := Mode_Reset, PV := 30000);
+    Pump_Start_Count_Val := Pump_Start_Count.CV; 
+
+    // Accumulate Total Run Time in Minutes
+    IF (State = 2) AND Pulse_1s THEN
+        Run_Time_Sec := Run_Time_Sec + 1;
+        IF Run_Time_Sec >= 60 THEN
+            Run_Time_Sec := 0;
+            Run_Time_min := Run_Time_min + 1;
+        END_IF;
+    END_IF;
+    Total_Run_Time_Min := Run_Time_min; 
+
+    // ==========================================
+    // SECTION 3: PROCESS SIMULATION
+    // ==========================================
+    // Decrease Tank Level by 1 every second while Pump is ON
+    Level_Dec_Timer(IN := (State = 2 OR State = 3) AND NOT Level_Dec_Timer.Q, PT := T#1s);
+    IF Level_Dec_Timer.Q AND Sim_Tank_Level > 0 THEN
+        Sim_Tank_Level := Sim_Tank_Level - 1;
+    END_IF;
+
+    // ==========================================
+    // SECTION 4: SAFETY & CRITICAL CONDITIONS
+    // ==========================================
+    IF E_Stop = TRUE THEN
+        State := 4;
+    END_IF;
+
+    IF (State = 2) AND Sim_Tank_Level <= 0 THEN
+        State := 6; // Dry Run Protection
+    END_IF; 
+
+    IF Mode_Reset = TRUE AND State < 4 THEN
+        Mode_Reset := FALSE; // Fail-Safe Reset
+    END_IF;
+    
+    IF Mode_Reset = TRUE THEN
+        Sim_Tank_Level := 100;
+    END_IF;
+  
+    // ==========================================
+    // SECTION 5: MAIN STATE MACHINE
+    // ==========================================
+    CASE State OF
+        0: 
+            Relay_Pump := FALSE;
+            IF Pump_Counter.Q = TRUE THEN
+                State := 5;
+            ELSIF Start_Btn = FALSE THEN 
+                State := 1;
+            END_IF;    
+            
+        1: 
+            IF Delay_Timer.Q = TRUE THEN
+                State := 2;
+            END_IF;
+            
+        2: 
+            Relay_Pump := TRUE;
+            IF Stop_Btn = FALSE THEN 
+                State := 3;
+            END_IF;
+            
+        3: 
+            IF Delay_Timer_2.Q = TRUE THEN
+                IF Pump_Counter.Q = TRUE THEN
+                    State := 5;
+                ELSE 
+                    State := 0;
+                END_IF;   
+            END_IF;
+            
+        4: 
+            Relay_Pump := FALSE;
+            Main_Alarm := TRUE;
+            IF Mode_Reset = TRUE THEN
+                Main_Alarm := FALSE;
+                E_Stop := FALSE;
+                Mode_Reset := FALSE;
+                State := 0;
+            END_IF;
+            
+        5: 
+            Relay_Pump := FALSE;
+            Main_Alarm := TRUE;
+            IF Mode_Reset = TRUE THEN
+                Main_Alarm := FALSE;
+                Mode_Reset := FALSE;
+                E_Stop := FALSE;
+                State := 0;
+            END_IF;    
+            
+        6: 
+            Relay_Pump := FALSE;
+            Main_Alarm := TRUE;
+            IF Mode_Reset = TRUE THEN
+                Main_Alarm := FALSE;
+                Mode_Reset := FALSE;
+                E_Stop := FALSE;
+                State := 0;
+            END_IF;
+    END_CASE;
+
+END_PROGRAM
+
+CONFIGURATION Config0
+    RESOURCE Res0 ON PLC
+        TASK Task0 (Interval := T#20ms, Priority := 0);
+        PROGRAM Inst0 WITH Task0 : main;
+    END_RESOURCE
+END_CONFIGURATION
+```
+## 📸 Snapshots
+**1. Node-RED Flow (Dual-Path Architecture & Rate Limiting):**
+![Node-RED Dual-path Architecture](Images/Node_Red_Flow_Phase9.png)
+**2. SQLite Database Terminal Verification (Historical Data Logging):**
+![SQlite Database](Images/SQlite_Phase_9.png)
