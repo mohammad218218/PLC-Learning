@@ -675,3 +675,232 @@ To keep the codebase clean, only the **newly added lines** for Phase 10 are show
 **3. Telegram Bot (Critical Network Alert):**
 ![Telegram Bot Network Alert](Images/Telegram_Alarm_Phase_10.png)
 
+
+# 🚀 Phase 11: Modular Architecture (OOP) & Clean Code Refactoring
+
+Building upon the robust network watchdog introduced in Phase 10[cite: 1], Phase 11 fundamentally restructures the PLC codebase. The system transitions from a monolithic structure into a **Modular Architecture**, leveraging Function Blocks (FBs) conforming to the IEC 61131-3 standard. This approach mimics Object-Oriented Programming (OOP) principles, elevating the codebase to an enterprise-grade industrial standard.
+
+## 🏗️ Architectural Upgrades
+
+### 1. Function Block (FB) Encapsulation
+The complex logic previously centralized in the main program has been decoupled into three independent, reusable Function Blocks (POUs). This enhances testability and prevents variable scope contamination.
+*   **`FB_Watchdog_Timing`:** Encapsulates the 1-second system pulse generator and the Modbus heartbeat watchdog logic[cite: 1].
+*   **`FB_Analytics`:** Manages predictive maintenance calculations locally. It independently handles the total run time and lifetime pump starts[cite: 1] without cluttering the main state machine.
+*   **`FB_Tank_Sim`:** Encapsulates the real-time process simulation[cite: 1], iterating the tank level decrement and exposing a clean `Is_Empty` boolean flag for safety logic.
+
+### 2. The "Read-Process-Write" Paradigm
+To ensure absolute deterministic execution, `PROGRAM main` was heavily refactored to act solely as a logic orchestrator. 
+*   **Read Inputs:** Hardware and network signals are mapped.
+*   **Process Logic:** The FBs are instantiated and wired together. The central `CASE OF` State Machine[cite: 1] evaluates transitions based on the clean outputs of these FBs.
+*   **Write Outputs:** Computed states are mapped to hardware outputs (`%QX`) only at the very end of the execution cycle, completely eliminating hardware race conditions.
+
+## 💻 Final Structured Text (ST) Code
+
+Below is the complete, refactored Modular Architecture. (Note: In OpenPLC, each `FUNCTION_BLOCK` resides in its own isolated POU).
+
+```iecst
+// ==========================================
+// MODULE 1: WATCHDOG & PULSE GENERATOR
+// ==========================================
+FUNCTION_BLOCK FB_Watchdog_Timing
+    VAR_INPUT
+        Node_Red_Pulse : BOOL;
+    END_VAR
+    VAR_OUTPUT
+        Pulse_1s : BOOL;
+        Network_Fault : BOOL;
+    END_VAR
+    VAR
+        Timer_1s : TON;
+        Pulse_Node_Red : TON;
+        Last_Node_Red_Pulse : BOOL;
+    END_VAR
+
+    Timer_1s(IN := NOT Timer_1s.Q, PT := T#1s);
+    Pulse_1s := Timer_1s.Q;
+
+    Pulse_Node_Red(IN := (Node_Red_Pulse = Last_Node_Red_Pulse), PT := T#3s);
+    Last_Node_Red_Pulse := Node_Red_Pulse;
+    Network_Fault := Pulse_Node_Red.Q;
+END_FUNCTION_BLOCK
+
+// ==========================================
+// MODULE 2: PUMP ANALYTICS 
+// ==========================================
+FUNCTION_BLOCK FB_Analytics
+    VAR_INPUT
+        Pump_Running : BOOL;
+        Reset_Cmd    : BOOL;
+        Pulse_1s     : BOOL; 
+    END_VAR
+    VAR_OUTPUT
+        Run_Time_min : INT := 0;   
+        Start_Count_Val : INT;
+        Maint_Interlock : BOOL;
+    END_VAR
+    VAR
+        Run_Time_Sec : INT := 0;
+        Pump_Start_Count : CTU;
+        Maint_Counter : CTU;
+    END_VAR
+
+    Pump_Start_Count(CU := Pump_Running, R := Reset_Cmd, PV := 30000);
+    Start_Count_Val := Pump_Start_Count.CV; 
+
+    Maint_Counter(CU := Pump_Running, R := Reset_Cmd, PV := 3);
+    Maint_Interlock := Maint_Counter.Q;
+
+    IF Pump_Running AND Pulse_1s THEN
+        Run_Time_Sec := Run_Time_Sec + 1;
+        IF Run_Time_Sec >= 60 THEN
+            Run_Time_Sec := 0;
+            Run_Time_min := Run_Time_min + 1;
+        END_IF;
+    END_IF;
+END_FUNCTION_BLOCK
+
+// ==========================================
+// MODULE 3: TANK SIMULATOR
+// ==========================================
+FUNCTION_BLOCK FB_Tank_Sim
+    VAR_INPUT
+        Pump_Running : BOOL;
+        Reset_Cmd    : BOOL;
+    END_VAR
+    VAR_OUTPUT
+        Tank_Level   : INT := 100;
+        Is_Empty     : BOOL;
+    END_VAR
+    VAR
+        Level_Dec_Timer : TON;
+    END_VAR
+
+    Level_Dec_Timer(IN := Pump_Running AND NOT Level_Dec_Timer.Q, PT := T#1s);
+    
+    IF Level_Dec_Timer.Q AND (Tank_Level > 0) THEN
+        Tank_Level := Tank_Level - 1;
+    END_IF;
+
+    IF Reset_Cmd THEN
+        Tank_Level := 100;
+    END_IF;
+
+    Is_Empty := (Tank_Level <= 0);
+END_FUNCTION_BLOCK
+
+// ==========================================
+// PROGRAM MAIN: ORCHESTRATOR
+// ==========================================
+PROGRAM main
+    VAR
+        // --- Hardware & UI Mapping ---
+        I_Start_Btn AT %IX0.0 : BOOL;
+        I_Stop_Btn AT %IX0.1 : BOOL;
+        Q_Relay_Pump AT %QX0.0 : BOOL;
+        Q_System_Mode AT %QX0.2: BOOL;
+        Q_Main_Alarm AT %QX0.3 : BOOL;
+        I_Mode_Reset AT %QX0.4 : BOOL;
+        I_E_Stop AT %QX0.5 : BOOL;
+        I_Node_Red_Pulse AT %QX0.6: BOOL;
+
+        // --- Modbus Holding Registers ---
+        Sim_Tank_Level AT %QW0 : INT := 100;
+        State AT %QW1 : INT;
+        Total_Run_Time_Min AT %QW2 : INT;
+        Pump_Start_Count_Val AT %QW3 : INT;
+    END_VAR
+    
+    VAR
+        // --- FB Instances (Objects) ---
+        Watchdog_Inst : FB_Watchdog_Timing;
+        Analytics_Inst : FB_Analytics;
+        Tank_Inst : FB_Tank_Sim;
+        
+        Delay_Timer_Start : TON;
+        Delay_Timer_Stop : TON;
+
+        Cmd_Pump_Run : BOOL;
+        Cmd_Alarm_On : BOOL;
+    END_VAR
+
+    // ------------------------------------------
+    // PART 1: PROCESS DATA (CALL FUNCTION BLOCKS)
+    // ------------------------------------------
+    Watchdog_Inst(Node_Red_Pulse := I_Node_Red_Pulse);
+    
+    Analytics_Inst(
+        Pump_Running := Cmd_Pump_Run,
+        Reset_Cmd    := I_Mode_Reset,
+        Pulse_1s     := Watchdog_Inst.Pulse_1s
+    );
+    
+    Tank_Inst(
+        Pump_Running := Cmd_Pump_Run,
+        Reset_Cmd    := I_Mode_Reset
+    );
+
+    Total_Run_Time_Min := Analytics_Inst.Run_Time_min;
+    Pump_Start_Count_Val := Analytics_Inst.Start_Count_Val;
+    Sim_Tank_Level := Tank_Inst.Tank_Level;
+
+    // ------------------------------------------
+    // PART 2: SAFETY OVERRIDES & FAULT ROUTING
+    // ------------------------------------------
+    IF I_E_Stop THEN
+        State := 4;
+    ELSIF Analytics_Inst.Maint_Interlock AND State < 4 THEN
+        State := 5;
+    ELSIF Cmd_Pump_Run AND Tank_Inst.Is_Empty THEN
+        State := 6;
+    ELSIF Watchdog_Inst.Network_Fault THEN
+        State := 7;
+    END_IF;
+
+    IF State = 7 AND NOT I_Start_Btn AND NOT I_Stop_Btn THEN
+        State := 0;
+    ELSIF I_Mode_Reset AND State >= 4 AND State < 7 THEN
+        State := 0;
+    END_IF;
+
+    // ------------------------------------------
+    // PART 3: MAIN STATE MACHINE (CASE OF)
+    // ------------------------------------------
+    Delay_Timer_Start(IN := (State = 1), PT := T#3s);
+    Delay_Timer_Stop(IN := (State = 3), PT := T#5s);
+
+    CASE State OF
+        0: // Idle
+            Cmd_Pump_Run := FALSE;
+            Cmd_Alarm_On := FALSE;
+            IF NOT I_Start_Btn THEN State := 1; END_IF;
+            
+        1: // Start Delay
+            IF Delay_Timer_Start.Q THEN State := 2; END_IF;
+            
+        2: // Running
+            Cmd_Pump_Run := TRUE;
+            IF NOT I_Stop_Btn THEN State := 3; END_IF;
+            
+        3: // Stop Delay
+            IF Delay_Timer_Stop.Q THEN State := 0; END_IF;
+            
+        4, 5, 6, 7: // Fault States
+            Cmd_Pump_Run := FALSE;
+            Cmd_Alarm_On := TRUE;
+    END_CASE;
+
+    // ------------------------------------------
+    // PART 4: WRITE HARDWARE OUTPUTS
+    // ------------------------------------------
+    Q_Relay_Pump := Cmd_Pump_Run;
+    Q_Main_Alarm := Cmd_Alarm_On;
+
+END_PROGRAM
+
+CONFIGURATION Config0
+    RESOURCE Res0 ON PLC
+        TASK Task0 (Interval := T#20ms, Priority := 0);
+        PROGRAM Inst0 WITH Task0 : main;
+    END_RESOURCE
+END_CONFIGURATION
+```
