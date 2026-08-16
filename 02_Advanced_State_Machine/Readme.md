@@ -904,3 +904,38 @@ CONFIGURATION Config0
     END_RESOURCE
 END_CONFIGURATION
 ```
+
+# 🚀 Phase 12: Factory Acceptance Testing (FAT) & Engineering Documentation
+
+With the transition to a Modular Architecture complete (Phase 11), Phase 12 focuses on system validation, stress testing, and formal documentation. This phase ensures the software is robust enough for physical deployment and provides clear integration guidelines for HMI/SCADA engineers.
+
+## 📄 Engineering Documentation
+
+### 1. I/O Allocation & Modbus Map
+The following table defines the hardware and network memory mapping used by the OpenPLC runtime.
+
+| Type | Tag Name | Address | Description |
+| :--- | :--- | :--- | :--- |
+| **DI** | `I_Start_Btn` | `%IX0.0` | Physical Start Button (Active-Low) |
+| **DI** | `I_Stop_Btn` | `%IX0.1` | Physical Stop Button (Active-Low) |
+| **DO** | `Q_Relay_Pump` | `%QX0.0` | Pump Contactor Command |
+| **DO** | `Q_System_Mode` | `%QX0.2` | System Mode Indicator |
+| **DO** | `Q_Main_Alarm` | `%QX0.3` | General Fault Alarm / Siren |
+| **Coil** | `I_Mode_Reset` | `%QX0.4` | Remote Reset Pulse (Node-RED) |
+| **Coil** | `I_E_Stop` | `%QX0.5` | Remote Emergency Stop (Node-RED) |
+| **Coil** | `I_Node_Red_Pulse` | `%QX0.6` | Network Watchdog Heartbeat |
+| **Reg** | `Sim_Tank_Level` | `%QW0` | Simulated Tank Level (0-100%) |
+| **Reg** | `State` | `%QW1` | Current Machine State (0-7) |
+| **Reg** | `Total_Run_Time_Min`| `%QW2` | Accumulated Run Time (Minutes) |
+| **Reg** | `Pump_Start_Count_Val`| `%QW3` | Lifetime Pump Start Counter |
+
+### 2. Functional Design Specification (FDS) Summary
+*   **Dry Run Protection (State 6):** The system continuously monitors the tank level. If the level drops to **20% or below** while the pump is energized, the system instantly aborts to prevent cavitation and mechanical seal damage.
+*   **Maintenance Interlock (State 5):** The system enforces a mandatory inspection lock after every 3 consecutive starts.
+*   **Network Watchdog (State 7):** The PLC monitors a 1Hz toggle heartbeat from the Node-RED IoT gateway. A loss of signal for more than 3 seconds forces a hardware lock that can only be cleared via simultaneous physical button presses.
+
+## 🧪 Stress Test Protocol (Edge Cases)
+The modular code was subjected to standard industrial stress tests in the OpenPLC simulator:
+1.  **Priority Clash (E-Stop Override):** Triggering E-Stop (`%QX0.5`) while the pump is running immediately forces State 4, overriding all internal timers and logic.
+2.  **Stuck Reset Prevention:** Forcing the `I_Mode_Reset` boolean to remain `TRUE` does not bypass interlocks. The software automatically pulls the tag `FALSE` internally after evaluation.
+3.  **Watchdog Timeout:** Halting the heartbeat toggle reliably trips State 7 after exactly 3000ms.
