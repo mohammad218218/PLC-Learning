@@ -603,3 +603,82 @@ END_CONFIGURATION
 ![Node-RED Dual-path Architecture](Images/Node_Red_Flow_Phase9.png)
 **2. SQLite Database Terminal Verification (Historical Data Logging):**
 ![SQlite Database](Images/SQlite_Phase_9.png)
+
+# 🚀 Phase 10: Siemens-Standard Network Watchdog & Connection Fault Management
+
+Building upon the rigid Safe State architecture implemented in Phase 7, Phase 10 introduces a robust industrial **Network Watchdog (Heartbeat)**. The system now actively monitors the health of the Modbus connection between the IoT layer (Node-RED) and the PLC. If the connection is lost, the PLC automatically defaults to a new fail-safe state to prevent unsupervised pump operation.
+
+## 🏗️ Architectural Upgrades
+
+### 1. Siemens-Standard Heartbeat (Toggle Method)
+To reliably detect a network failure, the system uses an industrial toggle (square-wave) heartbeat instead of a simple single-pulse trigger.
+*   **IoT Toggle Generation:** Node-RED continuously generates a clock signal (toggling between `TRUE` and `FALSE` every second) and sends it to a dedicated PLC Modbus coil (`%QX0.6`).
+*   **PLC Freeze Detection:** The PLC compares the current state of the pulse with its previous state (`Last_Node_Red_Pulse`). If the state remains identical for 3 seconds (meaning the signal has "frozen" due to a network crash or disconnection), a `TON` timer triggers the Watchdog Fault.
+
+### 2. State 7: Network Watchdog Fault & Hardware Reset
+A new critical state (`State 7`) was added to the State Machine.
+*   When the watchdog timer triggers, the system immediately halts the pump and locks into `State 7`.
+*   **Hardware Fallback Reset:** Because a network failure means the Node-RED dashboard reset button is useless, exiting `State 7` requires a physical override. The operator must press the physical Start and Stop buttons simultaneously. (Configured for Active-Low / Pull-up hardware logic).
+
+## 🌐 IoT & Node-RED Simulation
+
+*   **Network Simulation Switch:** A dashboard switch was implemented to elegantly simulate a network disconnection without unplugging cables. Turning off the switch freezes the Node-RED heartbeat logic, intentionally triggering `State 7` on the PLC.
+*   **Context-Aware Telegram Extension:** The routing switch node was expanded to capture `State 7`, dispatching a "CRITICAL ALARM: Network connection lost!" message directly to the operator's mobile device via Telegram.
+
+## 💻 Structured Text (ST) Code Additions
+
+To keep the codebase clean, only the **newly added lines** for Phase 10 are shown below. These snippets integrate directly into the existing Sections of the `PROGRAM main` architecture:
+
+```iecst
+    // ==========================================
+    // ADDITIONS TO 'VAR' BLOCK
+    // ==========================================
+        Node_Red_Pulse AT %QX0.6: BOOL;  // Modbus coil for incoming heartbeat
+        Pulse_Node_Red : TON;            // Watchdog Timer
+        Last_Node_Red_Pulse : BOOL;      // Memory bit for freeze detection
+
+    // ==========================================
+    // ADDITIONS TO SECTION 1: TIMERS & PULSE GENERATORS
+    // ==========================================
+    (* Generate Node Red pulse for Watchdog (Siemens Toggle Method) *)
+    Pulse_Node_Red(IN := (Node_Red_Pulse = Last_Node_Red_Pulse), PT := T#3s);
+    Last_Node_Red_Pulse := Node_Red_Pulse; // Save state for the next scan cycle
+
+    // ==========================================
+    // ADDITIONS TO SECTION 4: SAFETY & CRITICAL CONDITIONS
+    // ==========================================
+    (* Failed Node_Red_Pulse triggers Watchdog Fault *)
+    IF Pulse_Node_Red.Q = TRUE THEN
+        State := 7;
+    END_IF;    
+
+    // ==========================================
+    // ADDITIONS TO SECTION 5: MAIN STATE MACHINE (CASE OF)
+    // ==========================================
+        7: (* Network Watchdog Fault *)
+            Relay_Pump := FALSE;
+            Main_Alarm := TRUE;
+            
+            (* Hardware Reset: Simultaneous press of Active-Low Start & Stop *)
+            IF Start_Btn = FALSE AND Stop_Btn = FALSE THEN
+                Main_Alarm := FALSE;
+                Mode_Reset := FALSE;
+                E_Stop := FALSE;
+                State := 0;
+            END_IF;
+```
+## 📸 Snapshots
+**1. Node-RED Flow (Dual-Path Architecture & Rate Limiting):**
+![Node-RED Dual-path Architecture](Images/Node_Red_Flow_Phase9.png)
+**2. SQLite Database Terminal Verification (Historical Data Logging):**
+![SQlite Database](Images/SQlite_Phase_9.png)
+
+
+##📸 Snapshots
+**1. Node-RED Flow (Network Simulator & Watchdog Logic):**
+![Node-RED Flow Watchdog Logic](Images/Node_Red_Flow_Phase_10.png)
+**2. Node-RED HMI Dashboard (Simulation Switch):**
+![Node-RED HMI(Images/Node_Red_HMI_Phase_10.png)
+**3. Telegram Bot (Critical Network Alert):**
+![Telegram Bot Network Alert](Images/Telegram_Alarm_Phase_10.png)
+
