@@ -667,13 +667,6 @@ To keep the codebase clean, only the **newly added lines** for Phase 10 are show
                 State := 0;
             END_IF;
 ```
-## 📸 Snapshots
-**1. Node-RED Flow (Dual-Path Architecture & Rate Limiting):**
-![Node-RED Dual-path Architecture](Images/Node_Red_Flow_Phase9.png)
-**2. SQLite Database Terminal Verification (Historical Data Logging):**
-![SQlite Database](Images/SQlite_Phase_9.png)
-
-
 ##📸 Snapshots
 **1. Node-RED Flow (Network Simulator & Watchdog Logic):**
 ![Node-RED Flow Watchdog Logic](Images/Node_Red_Flow_Phase_10.png)
