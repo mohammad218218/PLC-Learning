@@ -930,7 +930,7 @@ The following table defines the hardware and network memory mapping used by the 
 | **Reg** | `Pump_Start_Count_Val`| `%QW3` | Lifetime Pump Start Counter |
 
 ### 2. Functional Design Specification (FDS) Summary
-*   **Dry Run Protection (State 6):** The system continuously monitors the tank level. If the level drops to **20% or below** while the pump is energized, the system instantly aborts to prevent cavitation and mechanical seal damage.
+*   **Dry Run Protection (State 6):** The system continuously monitors the tank level. If the level drops to **0% (completely empty)** while the pump is energized, the system instantly aborts to prevent cavitation and mechanical seal damage.
 *   **Maintenance Interlock (State 5):** The system enforces a mandatory inspection lock after every 3 consecutive starts.
 *   **Network Watchdog (State 7):** The PLC monitors a 1Hz toggle heartbeat from the Node-RED IoT gateway. A loss of signal for more than 3 seconds forces a hardware lock that can only be cleared via simultaneous physical button presses.
 
