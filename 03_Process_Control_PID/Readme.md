@@ -81,8 +81,9 @@ Below is the scaled memory mapping and conversion logic added to `PROGRAM main` 
     MB_Pump_Speed := REAL_TO_INT(Cmd_Pump_Speed * 100.0);
 ```
 
-##📸 Snapshots
+## 📸 Snapshots
+
 **1. Node-RED Flow (Bidirectional Data Routing & Modbus Scaling):**
-![Node-RED Flow(Images/Phase_14_Red_Node.png)
+![Node-RED Flow](./Images/Phase_14_Red_Node.png)
 **2. HMI Dashboard (Live PID Tuning & Disturbance Rejection Chart):**
-![Node-RED HMI(Images/Phase_14_HMI.png)
+![Node-RED HMI](./Images/Phase_14_HMI.png)
